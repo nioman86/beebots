@@ -66,6 +66,7 @@ const EnvSchema = z.object({
   MODE: z.enum(["dry", "demo", "live"]).optional().default("dry"),
 
   TYPESAFE_API_KEY: opt,
+  JEV_BASE_URL: opt,                     // point Jev client at a local Laya laya-serve
   JEV_MODEL: str("jev-1.13.0"),
   JEV_TIMEOUT_MS: num(2000),
   JEV_DAILY_USD_CAP: num(2),
@@ -129,6 +130,8 @@ const EnvSchema = z.object({
   // The Beekeeper (keeper.ts, docs/BEEKEEPER.md). Normally connected from the dashboard (keeper.json); anything set
   // here wins. BEEKEEPER_WEBHOOK_URL is the Zap's Catch Hook; PUBLIC_URL is where the Zap finds this engine.
   BEEKEEPER_WEBHOOK_URL: opt,
+  // Optional shared secret; when set the keeper HMAC-signs its round POST (X-Webhook-Signature-V2, see keeper.ts).
+  BEEKEEPER_WEBHOOK_SECRET: opt,
   PUBLIC_URL: opt,
   PUBLIC_DOMAIN: opt,
   BEEKEEPER_EVERY_HOURS: opt,
@@ -189,7 +192,7 @@ export interface Config {
   hive: { url: string };
   update: { enabled: boolean; repo: string; version: string };
   settingsPath: string;
-  jev: { apiKey: string; model: string; timeoutMs: number; dailyUsdCap: number; usdPerMTok: number };
+  jev: { apiKey: string; model: string; baseUrl?: string; timeoutMs: number; dailyUsdCap: number; usdPerMTok: number };
   tickMs: number;
   dataRefreshMs: number;
   okx: { site: "eea"; apiBase: string; cliTimeoutMs: number };
@@ -217,7 +220,7 @@ export interface Config {
   logLevel: "debug" | "info" | "warn" | "error";
   alertWebhookUrl?: string;
   /** The Beekeeper's settings from the environment only (keeper.json fills in whatever is unset here). Never logged. */
-  keeper: { hookUrl?: string; publicUrl?: string; everyHours?: number; rampStart?: string };
+  keeper: { hookUrl?: string; hookSecret?: string; publicUrl?: string; everyHours?: number; rampStart?: string };
   /** The door's optional second key. Never logged, never sent anywhere. */
   lab: { secret?: string };
 }
@@ -243,7 +246,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
 
   if (e.MAX_LEVERAGE > 2 || e.MAX_LEVERAGE <= 0) throw new ConfigError("MAX_LEVERAGE must be in (0, 2]. Hard rule 3.");
   if (e.MAX_FLAT_MINUTES < 0) throw new ConfigError("MAX_FLAT_MINUTES must be >= 0");
-  if (e.BEEKEEPER_WEBHOOK_URL && !/^https:\/\//.test(e.BEEKEEPER_WEBHOOK_URL)) throw new ConfigError("BEEKEEPER_WEBHOOK_URL must start with https://");
+  if (e.BEEKEEPER_WEBHOOK_URL && !/^https?:\/\//.test(e.BEEKEEPER_WEBHOOK_URL)) throw new ConfigError("BEEKEEPER_WEBHOOK_URL must start with http:// or https://");
   const everyHours = e.BEEKEEPER_EVERY_HOURS === undefined ? undefined : Number(e.BEEKEEPER_EVERY_HOURS);
   if (everyHours !== undefined && !(everyHours >= 0.25)) throw new ConfigError("BEEKEEPER_EVERY_HOURS must be a number, at least 0.25");
   if (e.PUBLIC_URL && !originOf(e.PUBLIC_URL)) throw new ConfigError("PUBLIC_URL must look like https://your-domain or http://your-server-ip (no path)");
@@ -301,6 +304,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     jev: {
       apiKey: jevKey!,
       model: e.JEV_MODEL,
+      baseUrl: e.JEV_BASE_URL,
       timeoutMs: e.JEV_TIMEOUT_MS,
       dailyUsdCap: e.JEV_DAILY_USD_CAP,
       usdPerMTok: e.JEV_USD_PER_MTOK,
@@ -329,7 +333,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     dbPath: e.DB_PATH.replaceAll("{mode}", mode),
     logLevel: e.LOG_LEVEL,
     alertWebhookUrl: e.ALERT_WEBHOOK_URL,
-    keeper: { hookUrl: e.BEEKEEPER_WEBHOOK_URL, publicUrl, everyHours, rampStart: e.BEEKEEPER_RAMP_START },
+    keeper: { hookUrl: e.BEEKEEPER_WEBHOOK_URL, hookSecret: e.BEEKEEPER_WEBHOOK_SECRET, publicUrl, everyHours, rampStart: e.BEEKEEPER_RAMP_START },
     lab: { secret: e.LAB_SECRET },
   };
 }

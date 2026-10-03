@@ -85,11 +85,11 @@ export function Header({ snap, connected, stalled, soundOn, onSound }: { snap: S
         <Counter label="Fees paid" value={t ? money(t.feesUsd) : "–"} sub="taker 0.05%" />
         <Counter label="Funding" value={t ? signed(t.fundingUsd) : "–"} sub="00 · 08 · 16 UTC" />
         <Counter
-          label="Jev spend"
+          label="Decision spend"
           value={t ? money(t.jevUsd, 4) : "–"}
           sub={jev ? `today ${money(jev.spentTodayUsd, 3)} of ${money(jev.dailyCapUsd, 0)} cap` : undefined}
         />
-        <Counter label="Decisions" value={decisions.toLocaleString()} sub={jev?.down ? "Jev unreachable: holding" : jev?.capTripped ? "Jev cap hit: holding" : "every one recorded"} tone={jev?.down || jev?.capTripped ? "bad" : undefined} />
+        <Counter label="Decisions" value={decisions.toLocaleString()} sub={jev?.down ? "Laya unreachable: holding" : jev?.capTripped ? "Laya cap hit: holding" : "every one recorded"} tone={jev?.down || jev?.capTripped ? "bad" : undefined} />
         <Counter label="Visitors" value={snap?.visitors ? snap.visitors.total.toLocaleString() : "–"} sub={snap?.visitors ? `${snap.visitors.watching} watching now` : undefined} />
         <a className="counter host" href={PROFILE.links?.sponsor ?? "https://mrc.fm/beebots"} target="_blank" rel="noopener">
           <div className="eyebrow">Hosted on</div>

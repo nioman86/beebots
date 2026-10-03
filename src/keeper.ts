@@ -6,7 +6,7 @@
 // /snapshot and the live feed. The key and the hook URL are never stored in a log, never served.
 //
 // Nothing in here may throw into the engine: tick(), onAlert(), start() and publicState() catch everything.
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { BEES, type BeeId } from "./config.js";
 import type { Db } from "./db.js";
@@ -226,6 +226,8 @@ export class HiveBoard {
 export interface KeeperConfig {
   /** The Zap's Catch Hook. Unset = the Beekeeper is off: no rounds. */
   hookUrl?: string;
+  /** Optional shared secret; when set the round POST is HMAC-signed (X-Webhook-Signature-V2). */
+  hookSecret?: string;
   /** Where the Zap finds this engine, e.g. https://bees.example.com (no trailing slash). */
   publicUrl?: string;
   /** Hours between rounds once the ramp (if any) is over. */
@@ -391,7 +393,7 @@ export class Keeper {
   }
 
   private async begin(source: KeeperSource, alert?: string): Promise<number | null> {
-    const { hookUrl, publicUrl } = this.d.config();
+    const { hookUrl, hookSecret, publicUrl } = this.d.config();
     if (!hookUrl || !publicUrl || this.d.closed?.()) return null;
     const now = this.now();
     const line = alert ? redactString(alert).slice(0, 300) : null;
@@ -408,11 +410,20 @@ export class Keeper {
     log.info("beekeeper round started", { round: id, source, open: open.join(",") });
     // Warm the Hive board while the Zap wakes up, so its scorecard has the viewer bees in it.
     void this.d.board?.refresh();
+    const body = JSON.stringify({ source, alert: line ?? "", round: id, base_url: publicUrl, key, key_expires_at: new Date(now + KEEPER_KEY_TTL_MS).toISOString() });
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    // Optional shared-secret HMAC (X-Webhook-Signature-V2): signs "<epoch-seconds>.<body>" so the receiving webhook
+    // can authenticate the round and reject replays. Unset keeps the POST unsigned (the Zapier catch-hook case).
+    if (hookSecret) {
+      const ts = Math.floor(now / 1000).toString();
+      headers["x-webhook-timestamp"] = ts;
+      headers["x-webhook-signature-v2"] = createHmac("sha256", hookSecret).update(ts + "." + body).digest("hex");
+    }
     try {
       const r = await this.fetch(hookUrl, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ source, alert: line ?? "", round: id, base_url: publicUrl, key, key_expires_at: new Date(now + KEEPER_KEY_TTL_MS).toISOString() }),
+        headers,
+        body,
         // A redirect would re-send the key to wherever it points.
         redirect: "error",
         signal: AbortSignal.timeout(10_000),

@@ -26,6 +26,7 @@ const OWNER_UNDO_REASON = "Undone by the owner from the dashboard.";
 
 const FileSchema = z.object({
   hookUrl: z.string().optional(),
+  hookSecret: z.string().optional(),
   publicUrl: z.string().optional(),
   everyHours: z.number().min(0.25).optional(),
   rampStart: z.union([z.string(), z.number()]).optional(),
@@ -42,7 +43,7 @@ export function parseHookUrl(v: unknown): string | null {
   if (typeof v !== "string" || v.length > 500) return null;
   try {
     const u = new URL(v.trim());
-    return u.protocol === "https:" && u.hostname && !u.username && !u.password ? u.href : null;
+    return (u.protocol === "https:" || u.protocol === "http:") && u.hostname && !u.username && !u.password ? u.href : null;
   } catch {
     return null;
   }
@@ -85,7 +86,7 @@ export class KeeperSettings {
 
   constructor(
     private path: string,
-    private env: { hookUrl?: string; publicUrl?: string; everyHours?: number; rampStart?: string } = {},
+    private env: { hookUrl?: string; hookSecret?: string; publicUrl?: string; everyHours?: number; rampStart?: string } = {},
   ) {
     this.file = loadFile(path);
     this.current = this.resolve();
@@ -94,6 +95,7 @@ export class KeeperSettings {
   private resolve(): KeeperConfig {
     return {
       hookUrl: this.env.hookUrl ?? this.file.hookUrl,
+      hookSecret: this.env.hookSecret ?? this.file.hookSecret,
       publicUrl: this.env.publicUrl ?? this.file.publicUrl,
       everyHours: this.env.everyHours ?? this.file.everyHours ?? KEEPER_DEFAULT_EVERY_HOURS,
       rampStart: parseRampStart(this.env.rampStart ?? this.file.rampStart),

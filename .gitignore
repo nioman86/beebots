@@ -8,3 +8,11 @@ data/
 *.sqlite-*
 .DS_Store
 .gstack/
+
+# --- local deployment artifacts (James 2026-10-03) ---
+ui-backup/
+web-overlay/
+laya.patch
+*.bak*
+*.bak-*
+/dashboard/index-*.js

@@ -9,14 +9,14 @@ const Row = memo(function Row({ d }: { d: DecisionEvent }) {
   const acted = d.action !== "hold";
   const live = d.live;
   const move = live ? (live.deltaUsd > 0 ? "up" : live.deltaUsd < 0 ? "down" : "still") : "still";
-  // Jev's probability for the label it chose (not its separate "confidence" score), so it matches the bars.
+  // Laya's probability for the label it chose (not its separate "confidence" score), so it matches the bars.
   const pChoice = d.probabilities.find((p) => p.label === d.choice)?.p ?? null;
   return (
     <li className={`tick ${acted ? "acted" : ""} ${d.pulse ? "pulse" : ""} move-${move}`} style={{ ["--bee" as string]: meta.color }}>
       <div className="tick-line">
         <span className="tick-dot" />
         <span className="tick-bee">{meta.short}</span>
-        <span className="tick-choice">{d.choice ?? (d.jev === "unreachable" ? "Jev unreachable" : d.jev === "daily_cap" ? "Jev cap hit" : "no call")}</span>
+        <span className="tick-choice">{d.choice ?? (d.jev === "unreachable" ? "Laya unreachable" : d.jev === "daily_cap" ? "Laya cap hit" : "no call")}</span>
         <span className="tick-meta num">
           {live && (
             <span className={`tick-money ${live.valueUsd >= 0 ? "good" : "bad"}`} title={live.kind === "open" ? "open P&L" : "total P&L"}>
@@ -30,7 +30,7 @@ const Row = memo(function Row({ d }: { d: DecisionEvent }) {
       {d.required ? (
         <div className="tick-pulse num">
           <span className="side flat">RULES</span>
-          <span className="dim">only legal move · Jev not asked</span>
+          <span className="dim">only legal move · Laya not asked</span>
         </div>
       ) : d.watch ? (
         <div className="tick-pulse num">
@@ -42,7 +42,7 @@ const Row = memo(function Row({ d }: { d: DecisionEvent }) {
           {live.side ? <span className={`side ${live.side}`}>{live.side === "long" ? "▲ LONG" : "▼ SHORT"}</span> : <span className="side flat">FLAT</span>}
           <span className="dim">{live.kind === "open" ? "open P&L" : "total P&L"}</span>
           <span className={`tick-delta ${move}`}>{move === "still" ? "±$0.00" : signed(live.deltaUsd)}</span>
-          <span className="dim">benched · Jev sits out</span>
+          <span className="dim">benched · Laya sits out</span>
         </div>
       ) : (
         top.length > 0 && (

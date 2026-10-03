@@ -48,6 +48,7 @@ export interface SystemOne {
 export interface JevOpts {
   apiKey: string;
   model: string;
+  baseUrl?: string;                     // when set, use local Laya /v1/systemone instead of TypeSafe
   timeoutMs: number;
   dailyUsdCap: number;
   usdPerMTok: number;
@@ -58,6 +59,22 @@ export interface JevOpts {
 }
 
 const dayKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+/** Minimal Jev-wire SystemOne client over HTTP, for a local Laya laya-serve (/v1/systemone). */
+class HttpSystemOne implements SystemOne {
+  constructor(private baseUrl: string, private apiKey: string) {}
+  async systemOne(req: SDK.SystemOneRequest, opts?: SDK.RequestOptions): Promise<SDK.SystemOneResult<SDK.Questions>> {
+    const url = this.baseUrl.replace(/\/+$/, "") + "/v1/systemone";
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), opts?.timeout ?? 2000);
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (this.apiKey) headers.authorization = `Bearer ${this.apiKey}`;
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(req), signal: ctl.signal });
+    clearTimeout(t);
+    if (!res.ok) { const e = new Error(`HTTP ${res.status}`) as Error & { status?: number }; e.status = res.status; throw e; }
+    return res.json() as Promise<SDK.SystemOneResult<SDK.Questions>>;
+  }
+}
 
 export class Jev {
   private client: SystemOne;
@@ -72,13 +89,15 @@ export class Jev {
   constructor(private opts: JevOpts) {
     this.client =
       opts.client ??
-      new TypeSafeClient({
+      (opts.baseUrl
+        ? new HttpSystemOne(opts.baseUrl, opts.apiKey)
+        : new TypeSafeClient({
         apiKey: opts.apiKey,
         defaultModel: opts.model,
         timeout: opts.timeoutMs,
         retry: { maxRetries: 0 }, // we back off ourselves; a 2 s tick must not wait on SDK retries
         logLevel: "off", // SDK debug logging would print request bodies
-      });
+      }));
     this.now = opts.now ?? Date.now;
     this.day = dayKey(this.now());
     this.spentTodayUsd = opts.spentTodayUsd ?? 0;
@@ -157,8 +176,8 @@ export class Jev {
 }
 
 /** Setup page: one tiny real call proves the key works. Returns an error message, or null when the key is good. */
-export async function checkJevKey(apiKey: string, model: string, timeoutMs = 10_000): Promise<string | null> {
-  const client = new TypeSafeClient({ apiKey, defaultModel: model, timeout: timeoutMs, retry: { maxRetries: 0 }, logLevel: "off" });
+export async function checkJevKey(apiKey: string, model: string, timeoutMs = 10_000, baseUrl?: string): Promise<string | null> {
+  const client = baseUrl ? new HttpSystemOne(baseUrl, apiKey) : new TypeSafeClient({ apiKey, defaultModel: model, timeout: timeoutMs, retry: { maxRetries: 0 }, logLevel: "off" });
   try {
     await client.systemOne(
       { model, state: { check: "setup" }, questions: { ok: choice("Is this a connection test?", { YES: null, NO: null }) } },

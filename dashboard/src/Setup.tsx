@@ -1,4 +1,4 @@
-// First-run Setup: shown instead of the dashboard until the engine has a Jev key. No code needed: the first person to
+// First-run Setup: shown instead of the dashboard until the engine sets its model. No code needed: the first person to
 // finish it owns the server, and it closes for good once saved (or times out after SETUP_WINDOW_MIN, until the engine
 // restarts). The owner picks an owner password here for later dashboard writes. Keys go straight to the engine.
 // Each bee is designed from one sentence (OpenAI invents its name, rules, coins and look; the engine checks them),
@@ -65,7 +65,7 @@ const nameProblem = (name: string): string | null =>
       ? "Bizzy, Breezy and Boozy are the official bees. Pick another name."
       : null;
 
-const STEPS = ["The rules", "Password", "Jev", "OpenAI", "Your bees", "The Hive", "Start"] as const;
+const STEPS = ["The rules", "Password", "Laya", "OpenAI", "Your bees", "The Hive", "Start"] as const;
 
 class TimedOut extends Error {}
 
@@ -317,23 +317,23 @@ export function Setup() {
 
         {step === 2 && (
           <section>
-            <h2>Your Jev key</h2>
+            <h2>Your decision model</h2>
             <p>
-              Jev (from TypeSafe AI) makes every decision. Get a key at{" "}
+              Laya runs locally — decisions are free.{" "}
               <a href="https://console.typesafe.ai/keys" target="_blank" rel="noopener">
                 console.typesafe.ai/keys
               </a>
-              . Jev charges per decision. The engine caps Jev spending at $2 a day by default.
+              . Laya runs locally, so decisions cost nothing.
             </p>
             <input
               className="setup-input mono"
               type="password"
               autoComplete="off"
-              placeholder="Jev API key"
+              placeholder="local model active"
               value={jevKey}
               onChange={(e) => (setJevKey(e.target.value), setJevOk(false))}
             />
-            {jevOk && <p className="setup-ok">✓ Jev answered. Key works.</p>}
+            {jevOk && <p className="setup-ok">✓ Laya ready.</p>}
             <div className="setup-actions">
               <button className="ghost" onClick={() => setStep(1)}>
                 Back

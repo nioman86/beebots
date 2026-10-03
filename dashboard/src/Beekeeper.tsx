@@ -1,4 +1,4 @@
-// The Beekeeper card: an outside coach (a Zap on Zapier: Jev picks the bee, Claude Opus 5.5 writes the rules) that
+// The Beekeeper card: an outside coach (a Zap on Zapier: Laya picks the bee, Claude Opus 5.5 writes the rules) that
 // looks at all three bees every round and may rewrite one bee's rules. The engine records every round (src/keeper.ts)
 // and serves the last few in /snapshot.keeper; live changes also arrive on the feed as "keeper" events.
 // Off: a short pitch and the "Connect the Beekeeper" form. On: the rounds, plus the owner's controls.
