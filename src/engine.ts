@@ -298,7 +298,7 @@ export class Engine {
     bee.cap = risk.cap;
     // A rules-only hold that the risk layer left alone (a stop or cap still overrides it and shows as usual).
     const ruled = required && risk.action.kind === "none" && !risk.forcedBy;
-    const status = ruled ? `${labels[0]}: required by rules, Jev not asked` : risk.status;
+    const status = ruled ? `${labels[0]}: required by rules, Laya not asked` : risk.status;
 
     // Hard rule 10: recorded before it is acted on.
     const costUsd = r && r.ok ? r.costUsd : 0;
@@ -467,7 +467,7 @@ export class Engine {
   private beginClose(now: number) {
     this.closedAt = now;
     this.d.db.setMeta("experiment_closed_at", String(now));
-    log.info("experiment close requested: closing every position, no more Jev calls");
+    log.info("experiment close requested: closing every position, no more Laya calls");
     this.d.bus.emit("status", { event: "experiment_closing" }, now);
     this.d.alerts.send("experiment close requested: closing all positions");
   }
@@ -769,11 +769,11 @@ export class Engine {
   private checkJevOutage(now: number) {
     const since = this.d.jev.downSince;
     if (since === null) {
-      if (this.jevDownAlerted) this.d.alerts.send("Jev is back");
+      if (this.jevDownAlerted) this.d.alerts.send("Laya is back");
       this.jevDownAlerted = false;
     } else if (!this.jevDownAlerted && now - since > 5 * 60_000) {
       this.jevDownAlerted = true;
-      this.d.alerts.send("Jev unreachable for over 5 minutes: all bees holding");
+      this.d.alerts.send("Laya unreachable for over 5 minutes: all bees holding");
     }
   }
 

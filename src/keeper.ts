@@ -105,7 +105,7 @@ const QUIET = [
   "Losing, yes. Broken, no. There's a difference.",
   "Hands in pockets this round. The rules are fine, the market isn't.",
   "Poked the hive. The hive poked back. Leaving it.",
-  "Jev says leave them alone. I'm leaving them alone.",
+  "Laya says leave them alone. I'm leaving them alone.",
   "No bee earned a telling-off this round.",
   "Looked for someone to blame. Found the market.",
   "Still watching. Still unimpressed. No changes.",
@@ -571,12 +571,12 @@ export class Keeper {
               ? "Rewrite: LOCKED, this bee is retired. Do not pick it."
               : `Rewrite: LOCKED until ${until ? hhmm(until) : "later"}, its rules were rewritten under 20 hours ago and need time. Do not pick it.`;
         const rules = k?.rules.trim() ? quote(k.rules, 500) : "(none of its own: the style's built-in behaviour)";
-        return `${b.bee} ${quote(k?.name ?? b.bee, 40)} (${k?.styleLabel ?? "?"} style): equity $${b.equityUsd} (${b.pnlPct}% since start), ${pos}, trades today ${b.tradesToday}/${b.maxTradesPerDay}, lifetime orders ${b.totals.orders}, fees $${b.totals.feesUsd}, cap ${b.cap ?? "none"}, last Jev call: ${b.last?.status ?? "none"}. ${lock} Current rules: ${rules} Coins: ${k?.coins.join(",") || "any its style allows"}`;
+        return `${b.bee} ${quote(k?.name ?? b.bee, 40)} (${k?.styleLabel ?? "?"} style): equity $${b.equityUsd} (${b.pnlPct}% since start), ${pos}, trades today ${b.tradesToday}/${b.maxTradesPerDay}, lifetime orders ${b.totals.orders}, fees $${b.totals.feesUsd}, cap ${b.cap ?? "none"}, last Laya call: ${b.last?.status ?? "none"}. ${lock} Current rules: ${rules} Coins: ${k?.coins.join(",") || "any its style allows"}`;
       })
       .join("\n\n");
     let scorecard =
       `BEEKEEPER ROUND ${new Date(now).toISOString()}\n` +
-      `The hive's three bees together: $${snap.totals.pnlUsd} on $${snap.startEquityUsd * snap.bees.length} start ($${snap.startEquityUsd} each). Jev spent today $${snap.jev.spentTodayUsd}.\n\n` +
+      `The hive's three bees together: $${snap.totals.pnlUsd} on $${snap.startEquityUsd * snap.bees.length} start ($${snap.startEquityUsd} each). Laya spent today $${snap.jev.spentTodayUsd}.\n\n` +
       `THE THREE BEES\n${lines}`;
     const best = hive?.top[0];
     if (hive) {
