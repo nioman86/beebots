@@ -72,7 +72,8 @@ services:
     volumes:
       - caddy-data:/data
       - caddy-config:/config
-      - /mnt/user/appdata/beebots/web-overlay/index-CM-R2CrU.js:/srv/dashboard/assets/index-CM-R2CrU.js:ro
+      - /mnt/user/appdata/beebots/web-overlay/index-CM-R2CrU.laya.js:/srv/dashboard/assets/index-CM-R2CrU.laya.js:ro
+      - /mnt/user/appdata/beebots/web-overlay/index.html:/srv/dashboard/index.html:ro
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
   backup:
