@@ -5,6 +5,8 @@ services:
     build:
       context: ./laya
     restart: always
+    labels:
+      - "net.unraid.docker.managed=composeman"
     environment:
       LAYA_HOST: "0.0.0.0"
       LAYA_PORT: "8000"
@@ -25,6 +27,8 @@ services:
     build:
       context: .
     restart: always
+    labels:
+      - "net.unraid.docker.managed=composeman"
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     env_file:
@@ -57,6 +61,9 @@ services:
   web:
     image: ghcr.io/imikerussell/beebots-web:latest
     restart: always
+    labels:
+      - "net.unraid.docker.managed=composeman"
+      - "net.unraid.docker.webui=http://10.0.30.62"
     depends_on: [engine, laya]
     user: "1000:1000"
     sysctls: { net.ipv4.ip_unprivileged_port_start: 0 }
@@ -79,6 +86,8 @@ services:
   backup:
     image: ghcr.io/imikerussell/beebots-backup:latest
     restart: always
+    labels:
+      - "net.unraid.docker.managed=composeman"
     depends_on: [engine]
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
