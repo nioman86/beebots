@@ -78,10 +78,18 @@ const EnvSchema = z.object({
   OKX_API_BASE: str("https://eea.okx.com"),
   OKX_CLI_TIMEOUT_MS: num(15_000),
 
-  BEE_START_EQUITY_USD: num(333),
+  // Risk ceilings sized for the real live fund (~$106 USDC per bee, one OKX EEA sub-account each), not
+  // the upstream $333/$700 defaults. Env overrides these (set the same numbers in the live .env at go-live
+  // so a cleared env can't regress). MAX_LEVERAGE / DAILY_LOSS_STOP_PCT / BEE_RETIRE_AT_PCT stay 2 / 8 / 40:
+  // 2x L on a $106 isolated book is not over-levered, an 8% daily stop is a sane tripwire (~$8.50), and
+  // retiring at 40% (~$42 floor) protects capital a ~$106 hole can't absorb.
+  BEE_START_EQUITY_USD: num(106),
   MAX_LEVERAGE: num(2),
   MARGIN_MODE: z.literal("isolated").optional().default("isolated"),
-  MAX_NOTIONAL_USD_PER_BEE: num(700),
+  // ~1.5x equity cap per bee. The old $700 is ~6.6x a $106 book (dangerous single-position concentration);
+  // normal positions are far smaller (e.g. Bizzy opens ~0.4x equity, ~$42). Keeps the anti-fee-bleed rule:
+  // at 0.05% taker per side a bigger position is just bigger fees - trade caps + fee budgets stay the guard.
+  MAX_NOTIONAL_USD_PER_BEE: num(160),
   DAILY_LOSS_STOP_PCT: num(8),
   BEE_RETIRE_AT_PCT: num(40),
   MAX_FLAT_MINUTES: num(30),
