@@ -19,7 +19,7 @@ import { redactString, safeError } from "./redact.js";
 const require = createRequire(import.meta.url);
 const { TypeSafeClient, choice, score } = require("@typesafe-ai/sdk") as typeof SDK;
 
-export const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+export const GEMINI_BASE = process.env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com/v1beta/models";
 /** Room for a short thinking pass plus the JSON answer; also the worst case the cap check prices in. */
 export const GEMINI_MAX_OUTPUT_TOKENS = 1024;
 /**
