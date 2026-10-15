@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { money, signed } from "./BeeColumn";
 import { HiveButton } from "./Hive";
-import { PROFILE, type Snapshot } from "./types";
+import { chooserShort, fallbackText, PROFILE, type Snapshot } from "./types";
 
 function Clock() {
   const [now, setNow] = useState(Date.now());
@@ -57,6 +57,11 @@ export function Header({ snap, connected, stalled, soundOn, onSound }: { snap: S
   const day = snap?.startedAt ? Math.floor((Date.now() - snap.startedAt) / 86_400_000) + 1 : 1;
   const t = snap?.totals;
   const jev = snap?.jev;
+  const who = chooserShort(snap);
+  const onCode = jev?.provider === "code";
+  // The configured chooser is not proof of who decided: say so whenever the code chooser has been standing in.
+  const recentFallback = jev?.lastFallback && snap && snap.ts - jev.lastFallback.at < 15 * 60_000 ? jev.lastFallback : null;
+  const standIn = !onCode && (jev?.down || jev?.capTripped || jev?.budgetRefused || !!recentFallback);
   const orders = snap?.bees.reduce((a, b) => a + b.totals.orders, 0) ?? 0;
   const decisions = snap?.bees.reduce((a, b) => a + b.totals.decisions, 0) ?? 0;
   const live = connected && !stalled;
@@ -77,6 +82,15 @@ export function Header({ snap, connected, stalled, soundOn, onSound }: { snap: S
           <span className="dim">
             day {day} · 3 bees · OKX X-Perps · not financial advice
           </span>
+          {jev?.provider === "gemini" && (
+            <a className="powered" href="https://ai.google.dev/gemini-api/docs" target="_blank" rel="noopener" title={`The configured chooser is ${jev.fullName ?? "Gemini"}. Each call in the decision stream says who made it: CODE marks the code chooser standing in.`}>
+              <img src="/gemini.svg" alt="" width="16" height="16" />
+              <span>
+                Powered by <b>{jev.fullName ?? "Gemini"}</b>
+                {standIn ? " · code standing in" : ""}
+              </span>
+            </a>
+          )}
         </div>
       </div>
 
@@ -85,11 +99,36 @@ export function Header({ snap, connected, stalled, soundOn, onSound }: { snap: S
         <Counter label="Fees paid" value={t ? money(t.feesUsd) : "–"} sub="taker 0.05%" />
         <Counter label="Funding" value={t ? signed(t.fundingUsd) : "–"} sub="00 · 08 · 16 UTC" />
         <Counter
+<<<<<<< HEAD
           label="Decision spend"
           value={t ? money(t.jevUsd, 4) : "–"}
           sub={jev ? `today ${money(jev.spentTodayUsd, 3)} of ${money(jev.dailyCapUsd, 0)} cap` : undefined}
         />
         <Counter label="Decisions" value={decisions.toLocaleString()} sub={jev?.down ? "Laya unreachable: holding" : jev?.capTripped ? "Laya cap hit: holding" : "every one recorded"} tone={jev?.down || jev?.capTripped ? "bad" : undefined} />
+=======
+          label={`${who} spend`}
+          value={t ? money(t.jevUsd, 4) : "–"}
+          sub={jev ? `today ${money(jev.spentTodayUsd, 3)} of ${money(jev.dailyCapUsd, 0)} cap` : undefined}
+        />
+        <Counter
+          label="Decisions"
+          value={decisions.toLocaleString()}
+          sub={
+            onCode
+              ? "no model key: code decides"
+              : jev?.down
+                ? `${who} offline: code decides`
+                : jev?.capTripped
+                  ? `${who} cap hit: code decides`
+                  : jev?.budgetRefused
+                    ? `${who} near its cap: code may decide`
+                    : recentFallback
+                      ? `code stood in: ${fallbackText(recentFallback.reason, who)}`
+                      : "every one recorded"
+          }
+          tone={standIn ? "bad" : undefined}
+        />
+>>>>>>> 6cf999a224e67c7e2b6a74be0a064c409523d519
         <Counter label="Visitors" value={snap?.visitors ? snap.visitors.total.toLocaleString() : "–"} sub={snap?.visitors ? `${snap.visitors.watching} watching now` : undefined} />
         <a className="counter host" href={PROFILE.links?.sponsor ?? "https://mrc.fm/beebots"} target="_blank" rel="noopener">
           <div className="eyebrow">Hosted on</div>

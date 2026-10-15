@@ -6,7 +6,7 @@
 // /snapshot and the live feed. The key and the hook URL are never stored in a log, never served.
 //
 // Nothing in here may throw into the engine: tick(), onAlert(), start() and publicState() catch everything.
-import { createHmac, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { BEES, type BeeId } from "./config.js";
 import type { Db } from "./db.js";
@@ -105,7 +105,7 @@ const QUIET = [
   "Losing, yes. Broken, no. There's a difference.",
   "Hands in pockets this round. The rules are fine, the market isn't.",
   "Poked the hive. The hive poked back. Leaving it.",
-  "Laya says leave them alone. I'm leaving them alone.",
+  "Jev says leave them alone. I'm leaving them alone.",
   "No bee earned a telling-off this round.",
   "Looked for someone to blame. Found the market.",
   "Still watching. Still unimpressed. No changes.",
@@ -119,11 +119,11 @@ const SKIPPED = [
 const FAILED = "Couldn't get through to Zapier this round. I'll knock again.";
 const pick = (list: string[], n: number) => list[n % list.length]!;
 
-/** How each style works and what Jev sees for it: the part of the coach's brief that is the engine's to know. */
+/** How each style works and what the decision model sees for it: the part of the coach's brief that is the engine's to know. */
 const STYLE_PLAYBOOK = [
-  "Breakout: code only offers BREAKOUT_<coin> for coins already through today's trigger; WAIT is the only alternative. One entry per UTC day. Code closes the position at the UTC day close and at the stop (today's open). Moves while holding: HOLD, or CUT_LOSS only while losing. Numbers per coin: to_trigger_pct, day_move_pct, prev_range_pct, r1h_pct, fund_z, oi1h_pct, spread_bp. Coins allowed: BTC, ETH, SOL, HYPE.",
-  "Trend: never flat for long, when flat code forces an entry. Moves: LONG_<coin> / SHORT_<coin> on BTC, ETH; holding: HOLD_WINNER, ADD_TO_WINNER (above +1R), TRIM_HALF (score fell 3+), flip, SWITCH. Numbers: score (-9..+9 Donchian slices on 4h bars), long_on, short_on, slices, stop_dist_atr, rv90_pct, at_10d, r24h_pct, fund_z. Coins allowed: BTC, ETH.",
-  "Momentum: always holding something, when flat code forces an entry into the top momentum coin. Moves: APE_<coin>; holding: RIDE, DOUBLE_DOWN (after another ATR run), and after 24 h also BAIL, SWITCH_COIN, FLIP_SHORT. Numbers: rows in momentum-rank order with r1h_pct, r24h_pct, r7d_pct, attn_z, oi1h_pct, spread_bp, vol_musd. Coins allowed: any live X-Perp in the universe list.",
+  "Breakout: never forced in; waits flat for a setup. Code offers FADE_LONG_<coin> / FADE_SHORT_<coin> on stretched moves (RSI and Bollinger %B) and BREAKOUT_<coin> on a confirmed daily breakout (BTC, ETH, SOL, HYPE only), with WAIT as the alternative. Moves while holding: HOLD, TAKE_PROFIT (middle band or +1R), CUT_LOSS (after 20 min or at -0.5R). Code closes anything older than 4 h. Numbers per coin: rsi14, pct_b, to_trigger_pct, r1h_pct, fund_z, oi1h_pct, spread_bp. Coins allowed: BTC, ETH, SOL, HYPE, XRP, SUI, DOGE, LINK.",
+  "Trend: never forced in; sits in cash in chop. Moves: LONG_<coin> / SHORT_<coin> on BTC, ETH only when |score| >= 3, or WAIT; holding: HOLD_WINNER, ADD_TO_WINNER (above +1R), TRIM_HALF (score fell 3+), CLOSE_TREND (score turned), a flip or SWITCH only on an opposite |score| >= 5. Numbers: score (-9..+9 Donchian slices on 4h bars), long_on, short_on, slices, stop_dist_atr, rv90_pct, at_10d, r24h_pct, fund_z. Coins allowed: BTC, ETH.",
+  "Momentum: never forced in; waits flat when nothing moves. Moves: APE_<coin> (fresh rise with growing open interest) or SHORT_<coin> (fresh fall) on coins with $15M+ a day, or WAIT; holding: RIDE, TAKE_PROFIT, one DOUBLE_DOWN after a strong run, and after 30 min also BAIL, SWITCH_COIN, FLIP_SHORT. Code closes anything older than 12 h. Numbers: rows in momentum-rank order with r1h_pct, r24h_pct, r7d_pct, rsi14, attn_z, oi1h_pct, fund_z, spread_bp, vol_musd. Coins allowed: any live X-Perp in the universe list.",
   "About itself every bee sees: pos, usd, upl_r (open P&L in R), held_min or flat_min, trades (n/max today), fee_left, utc.",
 ];
 
@@ -226,8 +226,6 @@ export class HiveBoard {
 export interface KeeperConfig {
   /** The Zap's Catch Hook. Unset = the Beekeeper is off: no rounds. */
   hookUrl?: string;
-  /** Optional shared secret; when set the round POST is HMAC-signed (X-Webhook-Signature-V2). */
-  hookSecret?: string;
   /** Where the Zap finds this engine, e.g. https://bees.example.com (no trailing slash). */
   publicUrl?: string;
   /** Hours between rounds once the ramp (if any) is over. */
@@ -393,7 +391,7 @@ export class Keeper {
   }
 
   private async begin(source: KeeperSource, alert?: string): Promise<number | null> {
-    const { hookUrl, hookSecret, publicUrl } = this.d.config();
+    const { hookUrl, publicUrl } = this.d.config();
     if (!hookUrl || !publicUrl || this.d.closed?.()) return null;
     const now = this.now();
     const line = alert ? redactString(alert).slice(0, 300) : null;
@@ -410,20 +408,11 @@ export class Keeper {
     log.info("beekeeper round started", { round: id, source, open: open.join(",") });
     // Warm the Hive board while the Zap wakes up, so its scorecard has the viewer bees in it.
     void this.d.board?.refresh();
-    const body = JSON.stringify({ source, alert: line ?? "", round: id, base_url: publicUrl, key, key_expires_at: new Date(now + KEEPER_KEY_TTL_MS).toISOString() });
-    const headers: Record<string, string> = { "content-type": "application/json" };
-    // Optional shared-secret HMAC (X-Webhook-Signature-V2): signs "<epoch-seconds>.<body>" so the receiving webhook
-    // can authenticate the round and reject replays. Unset keeps the POST unsigned (the Zapier catch-hook case).
-    if (hookSecret) {
-      const ts = Math.floor(now / 1000).toString();
-      headers["x-webhook-timestamp"] = ts;
-      headers["x-webhook-signature-v2"] = createHmac("sha256", hookSecret).update(ts + "." + body).digest("hex");
-    }
     try {
       const r = await this.fetch(hookUrl, {
         method: "POST",
-        headers,
-        body,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source, alert: line ?? "", round: id, base_url: publicUrl, key, key_expires_at: new Date(now + KEEPER_KEY_TTL_MS).toISOString() }),
         // A redirect would re-send the key to wherever it points.
         redirect: "error",
         signal: AbortSignal.timeout(10_000),
@@ -571,12 +560,12 @@ export class Keeper {
               ? "Rewrite: LOCKED, this bee is retired. Do not pick it."
               : `Rewrite: LOCKED until ${until ? hhmm(until) : "later"}, its rules were rewritten under 20 hours ago and need time. Do not pick it.`;
         const rules = k?.rules.trim() ? quote(k.rules, 500) : "(none of its own: the style's built-in behaviour)";
-        return `${b.bee} ${quote(k?.name ?? b.bee, 40)} (${k?.styleLabel ?? "?"} style): equity $${b.equityUsd} (${b.pnlPct}% since start), ${pos}, trades today ${b.tradesToday}/${b.maxTradesPerDay}, lifetime orders ${b.totals.orders}, fees $${b.totals.feesUsd}, cap ${b.cap ?? "none"}, last Laya call: ${b.last?.status ?? "none"}. ${lock} Current rules: ${rules} Coins: ${k?.coins.join(",") || "any its style allows"}`;
+        return `${b.bee} ${quote(k?.name ?? b.bee, 40)} (${k?.styleLabel ?? "?"} style): equity $${b.equityUsd} (${b.pnlPct}% since start), ${pos}, trades today ${b.tradesToday}/${b.maxTradesPerDay}, lifetime orders ${b.totals.orders}, fees $${b.totals.feesUsd}, cap ${b.cap ?? "none"}, last call: ${b.last?.status ?? "none"}. ${lock} Current rules: ${rules} Coins: ${k?.coins.join(",") || "any its style allows"}`;
       })
       .join("\n\n");
     let scorecard =
       `BEEKEEPER ROUND ${new Date(now).toISOString()}\n` +
-      `The hive's three bees together: $${snap.totals.pnlUsd} on $${snap.startEquityUsd * snap.bees.length} start ($${snap.startEquityUsd} each). Laya spent today $${snap.jev.spentTodayUsd}.\n\n` +
+      `The hive's three bees together: $${snap.totals.pnlUsd} on $${snap.startEquityUsd * snap.bees.length} start ($${snap.startEquityUsd} each). Their decision model spent today $${snap.jev.spentTodayUsd}.\n\n` +
       `THE THREE BEES\n${lines}`;
     const best = hive?.top[0];
     if (hive) {

@@ -65,8 +65,21 @@ const EnvSchema = z.object({
   DRY_RUN: bool(true),
   MODE: z.enum(["dry", "demo", "live"]).optional().default("dry"),
 
+  // The chooser. With a Gemini key (here or from Setup) it is Gemini 4 Argon; with only a Jev key it is Jev; with neither,
+  // a deterministic code chooser (paper and demo only: MODE=live needs a key). The two keys never mix: a Jev key is never
+  // sent to Google, and JEV_* never become the Gemini model or price.
+  GEMINI_API_KEY: opt,
+  GEMINI_MODEL: str("gemini-4-argon"),
+  GEMINI_TIMEOUT_MS: num(3000),
+  GEMINI_DAILY_USD_CAP: num(3),
+  // Gemini 4 Argon's list price after the launch offer: $4 in / $20 out per million tokens (thinking billed as output).
+  // Pricing the cap at the higher price keeps it safe during the offer too.
+  GEMINI_USD_PER_MTOK: num(4),
+  GEMINI_USD_PER_MTOK_OUT: num(20),
+  // At most one paid call per bee per this many ms, whatever TICK_MS is; in between the bee holds.
+  GEMINI_MIN_INTERVAL_MS: num(60_000),
+  GEMINI_THINKING_LEVEL: opt,
   TYPESAFE_API_KEY: opt,
-  JEV_BASE_URL: opt,                     // point Jev client at a local Laya laya-serve
   JEV_MODEL: str("jev-1.13.0"),
   JEV_TIMEOUT_MS: num(2000),
   JEV_DAILY_USD_CAP: num(2),
@@ -78,37 +91,29 @@ const EnvSchema = z.object({
   OKX_API_BASE: str("https://eea.okx.com"),
   OKX_CLI_TIMEOUT_MS: num(15_000),
 
-  // Risk ceilings sized for the real live fund (~$106 USDC per bee, one OKX EEA sub-account each), not
-  // the upstream $333/$700 defaults. Env overrides these (set the same numbers in the live .env at go-live
-  // so a cleared env can't regress). MAX_LEVERAGE / DAILY_LOSS_STOP_PCT / BEE_RETIRE_AT_PCT stay 2 / 8 / 40:
-  // 2x L on a $106 isolated book is not over-levered, an 8% daily stop is a sane tripwire (~$8.50), and
-  // retiring at 40% (~$42 floor) protects capital a ~$106 hole can't absorb.
-  BEE_START_EQUITY_USD: num(106),
+  BEE_START_EQUITY_USD: num(333),
   MAX_LEVERAGE: num(2),
   MARGIN_MODE: z.literal("isolated").optional().default("isolated"),
-  // ~1.5x equity cap per bee. The old $700 is ~6.6x a $106 book (dangerous single-position concentration);
-  // normal positions are far smaller (e.g. Bizzy opens ~0.4x equity, ~$42). Keeps the anti-fee-bleed rule:
-  // at 0.05% taker per side a bigger position is just bigger fees - trade caps + fee budgets stay the guard.
-  MAX_NOTIONAL_USD_PER_BEE: num(160),
+  MAX_NOTIONAL_USD_PER_BEE: num(700),
   DAILY_LOSS_STOP_PCT: num(8),
   BEE_RETIRE_AT_PCT: num(40),
-  MAX_FLAT_MINUTES: num(30),
+  MAX_FLAT_MINUTES: num(1440),
   LIVE_SIZE_MULTIPLIER: num(0.25),
   LIVE_RAMP_HOURS: num(2),
   MIN_24H_VOL_USD: num(1_000_000),
   ALLOW_NON_CRYPTO: bool(false),
   TAKER_FEE_RATE: num(0.0005),
 
-  BREEZY_MIN_OPEN_PROB: num(0.7),
+  BREEZY_MIN_OPEN_PROB: num(0.55),
   BREEZY_MIN_SIZE_USD: num(10),
-  BIZZY_SIZE_FRACTION: num(0.4),
+  BIZZY_SIZE_FRACTION: num(0.5),
   BIZZY_UNIVERSE_SIZE: num(8),
   BIZZY_TIME_STOP_MINUTES: num(240),
   BOOZY_CANDIDATES: num(5),
-  // Defaults = the "wider swings" rules in strategies/*.md (what the original bees ran from 2026-09-24).
-  ...perStyle("BREEZY", { trades: 6, fee: 2.0, spread: 5, cooldown: 240, stopAtr: 2, maxFlat: 0 }),
-  ...perStyle("BIZZY", { trades: 2, fee: 2.0, spread: 5, cooldown: 5, stopAtr: 1.5, maxFlat: 20 }),
-  ...perStyle("BOOZY", { trades: 6, fee: 6.0, spread: 15, cooldown: 2, stopAtr: 2, maxFlat: 0 }),
+  // Defaults = Gemini 4 Argon's rules in strategies/*.md (what the original bees run since 2026-10-13).
+  ...perStyle("BREEZY", { trades: 2, fee: 0.75, spread: 5, cooldown: 240, stopAtr: 2, maxFlat: 1440 }),
+  ...perStyle("BIZZY", { trades: 4, fee: 1.2, spread: 5, cooldown: 30, stopAtr: 2, maxFlat: 1440 }),
+  ...perStyle("BOOZY", { trades: 3, fee: 1.5, spread: 8, cooldown: 60, stopAtr: 2.5, maxFlat: 1440 }),
   ...perSlot("BEE1"),
   ...perSlot("BEE2"),
   ...perSlot("BEE3"),
@@ -138,8 +143,6 @@ const EnvSchema = z.object({
   // The Beekeeper (keeper.ts, docs/BEEKEEPER.md). Normally connected from the dashboard (keeper.json); anything set
   // here wins. BEEKEEPER_WEBHOOK_URL is the Zap's Catch Hook; PUBLIC_URL is where the Zap finds this engine.
   BEEKEEPER_WEBHOOK_URL: opt,
-  // Optional shared secret; when set the keeper HMAC-signs its round POST (X-Webhook-Signature-V2, see keeper.ts).
-  BEEKEEPER_WEBHOOK_SECRET: opt,
   PUBLIC_URL: opt,
   PUBLIC_DOMAIN: opt,
   BEEKEEPER_EVERY_HOURS: opt,
@@ -168,7 +171,7 @@ export interface BeeKnobs {
   spreadGateBps: number;
   cooldownMinutes: number;
   stopAtrMult: number;
-  /** Effective max flat minutes: min(per-bee, global MAX_FLAT_MINUTES). 0 means "never flat past one tick". */
+  /** Effective max flat minutes: min(per-bee, global MAX_FLAT_MINUTES). */
   maxFlatMinutes: number;
 }
 
@@ -185,7 +188,7 @@ export interface SlotProfile {
   tagline: string;
   /** A portrait generated on Setup lives in the data volume. */
   customImage: boolean;
-  /** The owner's rules (fed to Jev) and coin restriction, from Setup. Empty for the original three. */
+  /** The owner's rules (fed to the chooser) and coin restriction, from Setup. Empty for the original three. */
   rules: string;
   coins: string[];
   /** Made on the Setup page (never shown with the original bees' art). */
@@ -200,7 +203,21 @@ export interface Config {
   hive: { url: string };
   update: { enabled: boolean; repo: string; version: string };
   settingsPath: string;
-  jev: { apiKey: string; model: string; baseUrl?: string; timeoutMs: number; dailyUsdCap: number; usdPerMTok: number };
+  /**
+   * The chooser. `provider` says which model the key is for ("code" = no key, the deterministic code chooser). The name
+   * "jev" stays so the engine, the DB columns and the dashboard keep working.
+   */
+  jev: {
+    provider: ChooserProvider;
+    apiKey: string;
+    model: string;
+    timeoutMs: number;
+    dailyUsdCap: number;
+    usdPerMTok: number;
+    usdPerMTokOut: number;
+    minIntervalMs: number;
+    thinkingLevel?: string;
+  };
   tickMs: number;
   dataRefreshMs: number;
   okx: { site: "eea"; apiBase: string; cliTimeoutMs: number };
@@ -228,9 +245,18 @@ export interface Config {
   logLevel: "debug" | "info" | "warn" | "error";
   alertWebhookUrl?: string;
   /** The Beekeeper's settings from the environment only (keeper.json fills in whatever is unset here). Never logged. */
-  keeper: { hookUrl?: string; hookSecret?: string; publicUrl?: string; everyHours?: number; rampStart?: string };
+  keeper: { hookUrl?: string; publicUrl?: string; everyHours?: number; rampStart?: string };
   /** The door's optional second key. Never logged, never sent anywhere. */
   lab: { secret?: string };
+}
+
+export type ChooserProvider = "gemini" | "jev" | "code";
+
+/** What the dashboard and the alerts call the chooser: a short name ("Argon") and a full one ("Gemini 4 Argon"). */
+export function chooserName(c: { provider: ChooserProvider; model: string }): { short: string; full: string } {
+  if (c.provider === "jev") return { short: "Jev", full: "Jev" };
+  if (c.provider === "code") return { short: "Code", full: "the code chooser" };
+  return /^gemini-4-argon/.test(c.model) ? { short: "Argon", full: "Gemini 4 Argon" } : { short: "Gemini", full: c.model };
 }
 
 export class ConfigError extends Error {}
@@ -245,16 +271,38 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
   const e = parsed.data as Record<string, unknown> & z.infer<typeof EnvSchema>;
   const mode: Mode = e.DRY_RUN ? "dry" : e.MODE;
 
+  const geminiKey = e.GEMINI_API_KEY ?? settings?.geminiKey;
   const jevKey = e.TYPESAFE_API_KEY ?? settings?.jevKey;
+  const provider: ChooserProvider = geminiKey ? "gemini" : jevKey ? "jev" : "code";
   const missing: string[] = [];
-  if (!jevKey) missing.push("TYPESAFE_API_KEY");
+  // Paper and demo run on the code chooser when there is no key. Real money is never traded on it alone.
+  if (mode === "live" && provider === "code") missing.push("GEMINI_API_KEY (or TYPESAFE_API_KEY)");
+  // The spend cap is only as good as the prices it counts with: a zero price makes every call free and a negative one
+  // gives money back, so neither may pass. Non-numbers and Infinity were already refused by num(). Names only, never values.
+  const money: Array<[string, number, "positive" | "nonnegative"]> = [
+    ["GEMINI_DAILY_USD_CAP", e.GEMINI_DAILY_USD_CAP, "nonnegative"],
+    ["GEMINI_USD_PER_MTOK", e.GEMINI_USD_PER_MTOK, "positive"],
+    ["GEMINI_USD_PER_MTOK_OUT", e.GEMINI_USD_PER_MTOK_OUT, "positive"],
+    ["GEMINI_TIMEOUT_MS", e.GEMINI_TIMEOUT_MS, "positive"],
+    ...(provider === "jev"
+      ? ([
+          ["JEV_DAILY_USD_CAP", e.JEV_DAILY_USD_CAP, "nonnegative"],
+          ["JEV_USD_PER_MTOK", e.JEV_USD_PER_MTOK, "positive"],
+          ["JEV_TIMEOUT_MS", e.JEV_TIMEOUT_MS, "positive"],
+        ] as Array<[string, number, "positive" | "nonnegative"]>)
+      : []),
+  ];
+  const bad = money.filter(([, v, kind]) => !Number.isFinite(v) || (kind === "positive" ? !(v > 0) : !(v >= 0)));
+  if (bad.length) {
+    throw new ConfigError(`Invalid settings:\n  ${bad.map(([name, , kind]) => `${name}: must be ${kind === "positive" ? "a number above 0" : "a number, 0 or more"}`).join("\n  ")}`);
+  }
   if (mode === "live" && e.LIVE_ACK !== LIVE_ACK_PHRASE) {
     throw new ConfigError(`MODE=live moves real money. Set LIVE_ACK=${LIVE_ACK_PHRASE} to confirm you accept the risk, or go back to DRY_RUN=true.`);
   }
 
   if (e.MAX_LEVERAGE > 2 || e.MAX_LEVERAGE <= 0) throw new ConfigError("MAX_LEVERAGE must be in (0, 2]. Hard rule 3.");
   if (e.MAX_FLAT_MINUTES < 0) throw new ConfigError("MAX_FLAT_MINUTES must be >= 0");
-  if (e.BEEKEEPER_WEBHOOK_URL && !/^https?:\/\//.test(e.BEEKEEPER_WEBHOOK_URL)) throw new ConfigError("BEEKEEPER_WEBHOOK_URL must start with http:// or https://");
+  if (e.BEEKEEPER_WEBHOOK_URL && !/^https:\/\//.test(e.BEEKEEPER_WEBHOOK_URL)) throw new ConfigError("BEEKEEPER_WEBHOOK_URL must start with https://");
   const everyHours = e.BEEKEEPER_EVERY_HOURS === undefined ? undefined : Number(e.BEEKEEPER_EVERY_HOURS);
   if (everyHours !== undefined && !(everyHours >= 0.25)) throw new ConfigError("BEEKEEPER_EVERY_HOURS must be a number, at least 0.25");
   if (e.PUBLIC_URL && !originOf(e.PUBLIC_URL)) throw new ConfigError("PUBLIC_URL must look like https://your-domain or http://your-server-ip (no path)");
@@ -309,14 +357,29 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     hive: { url: e.HIVE_URL.replace(/\/+$/, "") },
     update: { enabled: e.UPDATE_CHECK, repo: e.UPDATE_REPO, version: e.APP_VERSION },
     settingsPath: e.SETTINGS_PATH,
-    jev: {
-      apiKey: jevKey!,
-      model: e.JEV_MODEL,
-      baseUrl: e.JEV_BASE_URL,
-      timeoutMs: e.JEV_TIMEOUT_MS,
-      dailyUsdCap: e.JEV_DAILY_USD_CAP,
-      usdPerMTok: e.JEV_USD_PER_MTOK,
-    },
+    jev:
+      provider === "jev"
+        ? {
+            provider,
+            apiKey: jevKey!,
+            model: e.JEV_MODEL,
+            timeoutMs: e.JEV_TIMEOUT_MS,
+            dailyUsdCap: e.JEV_DAILY_USD_CAP,
+            usdPerMTok: e.JEV_USD_PER_MTOK,
+            usdPerMTokOut: 0, // Jev bills input tokens only
+            minIntervalMs: 0, // Jev is cheap enough to ask every tick, as before
+          }
+        : {
+            provider,
+            apiKey: geminiKey ?? "",
+            model: e.GEMINI_MODEL,
+            timeoutMs: e.GEMINI_TIMEOUT_MS,
+            dailyUsdCap: e.GEMINI_DAILY_USD_CAP,
+            usdPerMTok: e.GEMINI_USD_PER_MTOK,
+            usdPerMTokOut: e.GEMINI_USD_PER_MTOK_OUT,
+            minIntervalMs: Math.max(0, e.GEMINI_MIN_INTERVAL_MS),
+            ...(e.GEMINI_THINKING_LEVEL ? { thinkingLevel: e.GEMINI_THINKING_LEVEL } : {}),
+          },
     tickMs: Math.max(1000, e.TICK_MS),
     dataRefreshMs: Math.max(15_000, e.DATA_REFRESH_MS),
     okx: { site: e.OKX_SITE, apiBase: e.OKX_API_BASE.replace(/\/+$/, ""), cliTimeoutMs: e.OKX_CLI_TIMEOUT_MS },
@@ -341,7 +404,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     dbPath: e.DB_PATH.replaceAll("{mode}", mode),
     logLevel: e.LOG_LEVEL,
     alertWebhookUrl: e.ALERT_WEBHOOK_URL,
-    keeper: { hookUrl: e.BEEKEEPER_WEBHOOK_URL, hookSecret: e.BEEKEEPER_WEBHOOK_SECRET, publicUrl, everyHours, rampStart: e.BEEKEEPER_RAMP_START },
+    keeper: { hookUrl: e.BEEKEEPER_WEBHOOK_URL, publicUrl, everyHours, rampStart: e.BEEKEEPER_RAMP_START },
     lab: { secret: e.LAB_SECRET },
   };
 }

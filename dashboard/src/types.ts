@@ -14,9 +14,15 @@ export interface LastDecision {
   latencyMs: number | null;
   status: string;
   ts: number;
-  /** The rules made the call (one legal move, a hold); Laya was not asked. */
+  /** The rules made the call (one legal move, a hold); Jev was not asked. */
   required?: boolean;
+  /** Who actually made the call (absent on older engines). */
+  decidedBy?: DecisionSource | null;
+  fallbackReason?: string | null;
 }
+
+/** Who actually made a call: the model, Jev, the deterministic code chooser standing in for it, or the rules. */
+export type DecisionSource = "gemini" | "jev" | "code" | "rules";
 
 export interface PublicBee {
   bee: BeeName;
@@ -54,7 +60,21 @@ export interface Snapshot {
   bees: PublicBee[];
   leaderboard: Array<{ bee: BeeName; equityUsd: number }>;
   totals: { feesUsd: number; fundingUsd: number; jevUsd: number; pnlUsd: number };
-  jev: { spentTodayUsd: number; dailyCapUsd: number; capTripped: boolean; down: boolean };
+  /** The chooser (the name "jev" is kept for older engines). provider/name/fullName are absent on engines before Gemini support. */
+  jev: {
+    spentTodayUsd: number;
+    dailyCapUsd: number;
+    capTripped: boolean;
+    down: boolean;
+    /** A call was refused today because its reserved worst case did not fit under the cap. */
+    budgetRefused?: boolean;
+    /** The latest time the code chooser stood in for the model, and why. */
+    lastFallback?: { reason: string; at: number } | null;
+    /** The CONFIGURED chooser; who made each call is the decision's own decidedBy. */
+    provider?: "gemini" | "jev" | "code";
+    name?: string;
+    fullName?: string;
+  };
   recon: { ok: boolean | null; detail: string; ts: number };
   market: { refreshedAt: number; universe: string[]; spreadBlocked: Array<{ coin: string; spreadBp: number }>; attention: "news" | "volume" };
   visitors?: { total: number; watching: number };
@@ -110,12 +130,16 @@ export interface DecisionEvent {
   forcedBy: string | null;
   status: string;
   jev: string;
-  /** A benched bee's live row: no Laya call, just its position P&L moving. */
+  /** A benched bee's live row: no Jev call, just its position P&L moving. */
   pulse?: boolean;
-  /** Flat bee with nothing to ask Laya: what it is watching for (e.g. "SOL is 0.80% from breakout"). */
+  /** Flat bee with nothing to ask Jev: what it is watching for (e.g. "SOL is 0.80% from breakout"). */
   watch?: string;
-  /** One legal move (a hold, e.g. boozy's 24h lock): the rules decided and Laya was not asked. */
+  /** One legal move (a hold, e.g. a Momentum bee inside its minimum hold): the rules decided and the model was not asked. */
   required?: boolean;
+  /** Who actually made the call ("code" = the code chooser stood in for the model; null = nobody was asked). */
+  decidedBy?: DecisionSource | null;
+  /** Why the code chooser answered. */
+  fallbackReason?: string | null;
   /** The bee's money at this moment: open P&L while positioned, total P&L when flat, and the move since its last row. */
   live?: { coin: string | null; side: "long" | "short" | null; valueUsd: number; kind: "open" | "total"; deltaUsd: number };
 }
@@ -227,3 +251,35 @@ export interface HiveStatus {
   /** false: no owner password on this server (join/leave impossible until one is set). */
   passwordSet: boolean;
 }
+
+/** The chooser's short name for labels ("Argon", "Jev", "Code"). Older engines did not send one: they ran Jev. */
+export const chooserShort = (snap: Snapshot | null | undefined): string => snap?.jev?.name ?? "Jev";
+
+/** Why the code chooser made a call instead of the model, in words ("Argon answered off the menu"). */
+export function fallbackText(reason: string | null | undefined, who: string): string {
+  switch (reason) {
+    case "no_key":
+      return "no model key";
+    case "cap":
+      return `${who} daily cap reached`;
+    case "reservation":
+      return `${who} call refused: it could pass the daily cap`;
+    case "backoff":
+      return `${who} backing off after errors`;
+    case "timeout":
+      return `${who} timed out`;
+    case "error":
+      return `${who} call failed`;
+    case "off_menu":
+      return `${who} answered off the menu`;
+    case "paced":
+      return `${who} asked under a minute ago: holding`;
+    case "single_option":
+      return "one move on the menu";
+    default:
+      return `${who} not used`;
+  }
+}
+
+/** The code chooser made this call (it carries a synthetic confidence, so it is never shown as the model's). */
+export const byCode = (d: { decidedBy?: DecisionSource | null } | null | undefined): boolean => d?.decidedBy === "code";

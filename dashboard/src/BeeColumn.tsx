@@ -1,5 +1,5 @@
 import { EquityChart } from "./EquityChart";
-import { BEE_META, type BeeName, type PublicBee } from "./types";
+import { BEE_META, byCode, fallbackText, type BeeName, type PublicBee } from "./types";
 import type { Curve, FeedState } from "./useFeed";
 
 const CAP_LABEL: Record<string, string> = { trade_cap: "BENCHED", fee_budget: "BENCHED", loss_stop: "SENT HOME", retired: "RETIRED" };
@@ -58,9 +58,11 @@ interface Props {
   rank: number;
   gap: number | null;
   flash: FeedState["flashes"][BeeName];
+  /** The chooser's short name ("Argon", "Jev", "Code"). */
+  chooser: string;
 }
 
-export function BeeColumn({ name, bee, curve, baseline, rank, gap, flash }: Props) {
+export function BeeColumn({ name, bee, curve, baseline, rank, gap, flash, chooser }: Props) {
   const meta = BEE_META[name];
   const p = bee?.position ?? null;
   const flashing = flash && Date.now() - flash.at < 2500;
@@ -131,6 +133,7 @@ export function BeeColumn({ name, bee, curve, baseline, rank, gap, flash }: Prop
 
       <div className="last">
         <div className="last-head">
+<<<<<<< HEAD
           <span className="eyebrow">Laya’s last call</span>
           {bee?.last?.latencyMs != null && <span className="dim num">{bee.last.latencyMs} ms</span>}
         </div>
@@ -140,6 +143,22 @@ export function BeeColumn({ name, bee, curve, baseline, rank, gap, flash }: Prop
           <div className="required-call">
             <span className="required-choice">{bee.last.choice}</span>
             <span className="dim">required by the rules · Laya not asked</span>
+=======
+          <span className="eyebrow">{bee?.last?.decidedBy === "gemini" || bee?.last?.decidedBy === "jev" ? `${chooser}’s last call` : "Last call"}</span>
+          {bee?.last?.latencyMs != null && <span className="dim num">{bee.last.latencyMs} ms</span>}
+        </div>
+        {cap === "trade_cap" || cap === "fee_budget" ? (
+          <div className="dim">sitting out while benched: nothing {chooser} picks could be acted on until 00:00 UTC</div>
+        ) : byCode(bee?.last) ? (
+          <div className="required-call">
+            <span className="required-choice">{bee!.last!.choice}</span>
+            <span className="dim">code chose · {fallbackText(bee!.last!.fallbackReason, chooser)}</span>
+          </div>
+        ) : bee?.last?.required ? (
+          <div className="required-call">
+            <span className="required-choice">{bee.last.choice}</span>
+            <span className="dim">required by the rules · {chooser} not asked</span>
+>>>>>>> 6cf999a224e67c7e2b6a74be0a064c409523d519
           </div>
         ) : bee?.last?.top3.length ? (
           <ProbBars top3={bee.last.top3} choice={bee.last.choice} color={meta.color} big />
@@ -164,7 +183,11 @@ export function BeeColumn({ name, bee, curve, baseline, rank, gap, flash }: Prop
           {signed(bee?.totals.fundingUsd ?? 0)}
         </div>
         <div>
+<<<<<<< HEAD
           <span className="eyebrow">Laya</span>
+=======
+          <span className="eyebrow">{chooser}</span>
+>>>>>>> 6cf999a224e67c7e2b6a74be0a064c409523d519
           {money(bee?.totals.jevUsd ?? 0, 4)}
         </div>
         <div>
